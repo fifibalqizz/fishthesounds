@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finding Sounds - Phonics AR Game</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600;800&family=Orbitron:wght@700;900&family=Prompt:wght@500;700;900&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+    
+    <!-- MediaPipe Hands and Camera Utils -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        body {
+            font-family: 'Prompt', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            overflow: hidden;
+        }
+        .font-title {
+            font-family: 'Orbitron', sans-serif;
+        }
+        .font-display {
+            font-family: 'Kanit', sans-serif;
+        }
+        .font-mono-num {
+            font-family: 'Rajdhani', sans-serif;
+        }
+        #webcam-video {
+            transform: scaleX(-1);
+        }
+        @keyframes bubble {
+            0% { transform: translateY(0px) scale(0.8); opacity: 0.7; }
+            50% { transform: translateY(-120px) scale(1.2); opacity: 0.3; }
+            100% { transform: translateY(-250px) scale(1.5); opacity: 0; }
+        }
+        .bubble-anim {
+            animation: bubble 4.5s linear infinite;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-white h-screen w-screen overflow-hidden relative">
+
+    <!-- AR Webcam Background + Underwater Cartoon Theme -->
+    <div class="absolute inset-0 w-full h-full z-0 overflow-hidden bg-sky-950">
+        <!-- Live Webcam Feed behind underwater world -->
+        <video id="webcam-video" class="absolute inset-0 w-full h-full object-cover opacity-40 pointer-events-none" autoplay playsinline muted></video>
+        
+        <!-- Cartoon Ocean Gradient Overlay -->
+        <div class="absolute inset-0 bg-gradient-to-b from-sky-400/50 via-cyan-600/50 to-blue-950/75 pointer-events-none"></div>
+
+        <!-- Sun Rays Effect -->
+        <div class="absolute top-0 inset-x-0 h-96 bg-gradient-to-b from-white/20 to-transparent pointer-events-none"></div>
+
+        <!-- Top Left: Boy in Fishing Boat -->
+        <div class="absolute top-4 left-6 z-1 flex items-center space-x-3 pointer-events-none">
+            <div class="relative">
+                <div class="text-7xl filter drop-shadow-lg">⛵👦</div>
+            </div>
+        </div>
+
+        <!-- Dynamic SVG Canvas for Fishing Line connecting boat tip to hand/mouse cursor -->
+        <svg class="absolute inset-0 w-full h-full z-2 pointer-events-none">
+            <line id="fishing-rope" x1="120" y1="65" x2="200" y2="200" stroke="#fef3c7" stroke-width="3" stroke-dasharray="6,6" stroke-linecap="round" />
+        </svg>
+
+        <!-- Ambient Bubbles -->
+        <div class="absolute bottom-0 left-12 w-6 h-6 bg-cyan-200/40 rounded-full bubble-anim" style="animation-delay: 0s;"></div>
+        <div class="absolute bottom-0 left-1/3 w-4 h-4 bg-teal-200/40 rounded-full bubble-anim" style="animation-delay: 1.2s;"></div>
+        <div class="absolute bottom-0 left-1/2 w-8 h-8 bg-sky-200/30 rounded-full bubble-anim" style="animation-delay: 0.5s;"></div>
+        <div class="absolute bottom-0 left-3/4 w-5 h-5 bg-cyan-100/40 rounded-full bubble-anim" style="animation-delay: 2.0s;"></div>
+        <div class="absolute bottom-0 right-20 w-7 h-7 bg-blue-200/40 rounded-full bubble-anim" style="animation-delay: 0.8s;"></div>
+
+        <!-- Ocean Floor Corals -->
+        <div class="absolute bottom-0 inset-x-0 h-32 bg-gradient-to-t from-amber-950/80 to-transparent pointer-events-none flex justify-between items-end px-4 pb-2">
+            <span class="text-5xl filter drop-shadow">🪸🌿🦀</span>
+            <span class="text-6xl filter drop-shadow">🪨🌿🐢</span>
+            <span class="text-5xl filter drop-shadow">🌿🪸🐙</span>
+        </div>
+    </div>
+
+    <!-- UI Overlay Layer -->
+    <div id="game-container" class="absolute inset-0 z-10 flex flex-col justify-between p-6 pointer-events-none">
+
+        <!-- Top Header Bar -->
+        <header class="flex justify-between items-center pointer-events-auto w-full max-w-6xl mx-auto">
+            
+            <!-- Home Button -->
+            <button id="btn-home" class="bg-amber-600 hover:bg-amber-500 text-white p-3 rounded-2xl shadow-lg border-2 border-amber-300 flex items-center justify-center cursor-pointer transition-transform hover:scale-105">
+                <span class="text-xl">🏠</span>
+            </button>
+
+            <!-- Wooden Hanging Sign: FIND SOUND (Audio button only) -->
+            <div class="flex flex-col items-center">
+                <div class="flex space-x-8 -mb-2 z-10">
+                    <div class="w-3 h-6 bg-amber-800 rounded-full shadow"></div>
+                    <div class="w-3 h-6 bg-amber-800 rounded-full shadow"></div>
+                </div>
+                <div class="bg-amber-700 border-4 border-amber-900 px-8 py-1 rounded-xl shadow-xl text-center">
+                    <h1 class="font-title font-black text-lg text-amber-200 tracking-wider uppercase drop-shadow">FIND SOUND</h1>
+                </div>
+
+                <!-- Audio Prompt Box -->
+                <div class="mt-2 bg-amber-50 border-3 border-amber-800/80 rounded-2xl px-8 py-2.5 shadow-2xl flex items-center justify-center">
+                    <button id="btn-replay-sound" class="bg-amber-500 hover:bg-amber-400 text-amber-950 p-3 rounded-xl shadow-lg cursor-pointer transition-transform hover:scale-110 flex items-center space-x-2">
+                        <span class="text-2xl">🔊</span>
+                        <span class="font-title font-bold text-sm">Listen Sound</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Score Badge -->
+            <div class="bg-amber-600 border-3 border-amber-400 px-5 py-2.5 rounded-2xl shadow-xl flex items-center space-x-2">
+                <span class="text-2xl">⭐</span>
+                <span id="hud-score" class="font-title font-black text-xl text-white">Score: 0</span>
+            </div>
+        </header>
+
+        <!-- Main Screen Area -->
+        <main class="flex-1 flex flex-col items-center justify-center relative my-4">
+
+            <!-- 1. START SCREEN -->
+            <div id="screen-start" class="flex flex-col items-center text-center max-w-xl bg-sky-950/90 backdrop-blur-xl p-8 rounded-3xl border-4 border-amber-400/80 shadow-2xl shadow-amber-950/80 pointer-events-auto">
+                <div class="text-6xl mb-3 animate-bounce">🎣🐟</div>
+                <h2 class="font-title font-black text-4xl text-amber-300 mb-2 drop-shadow-md">FIND SOUND</h2>
+                <p class="font-display text-base text-cyan-100 mb-6">Listen to the letter sound and pinch the matching fish to catch it!</p>
+
+                <!-- Instructions Card -->
+                <div class="bg-slate-900/80 border-2 border-amber-500/40 rounded-2xl p-5 mb-8 w-full text-left space-y-3">
+                    <h3 class="font-title text-sm text-amber-300 uppercase tracking-wide flex items-center">
+                        <span class="mr-2">📜</span> How to Play:
+                    </h3>
+                    <ul class="space-y-2 text-sm font-display text-slate-200">
+                        <li class="flex items-center">
+                            <span class="bg-amber-500/30 text-amber-300 font-bold px-2 py-0.5 rounded mr-3 text-xs">1</span>
+                            <span><strong>Listen</strong> to the sound by clicking the speaker.</span>
+                        </li>
+                        <li class="flex items-center">
+                            <span class="bg-amber-500/30 text-amber-300 font-bold px-2 py-0.5 rounded mr-3 text-xs">2</span>
+                            <span><strong>Move</strong> your hand/mouse to guide the fishing hook.</span>
+                        </li>
+                        <li class="flex items-center">
+                            <span class="bg-amber-500/30 text-amber-300 font-bold px-2 py-0.5 rounded mr-3 text-xs">3</span>
+                            <span><strong>Pinch</strong> thumb & index together (or click) to catch!</span>
+                        </li>
+                    </ul>
+                </div>
+
+                <button id="btn-start" class="font-title font-black text-xl bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-300 text-amber-950 px-10 py-4 rounded-2xl shadow-xl shadow-amber-600/40 transform hover:scale-105 transition-all cursor-pointer flex items-center space-x-3">
+                    <span>🚀 START FISHING</span>
+                </button>
+            </div>
+
+            <!-- 2. GAMEPLAY SCREEN (Moving Random Swimming Fish Arena) -->
+            <div id="screen-game" class="hidden absolute inset-0 w-full h-full pointer-events-auto">
+                <div id="swimming-pool" class="relative w-full h-full">
+                    <!-- Fish elements with dynamic random movement -->
+                </div>
+
+                <div id="feedback-banner" class="hidden absolute bottom-12 left-1/2 transform -translate-x-1/2 px-8 py-3 rounded-2xl font-title font-black text-2xl shadow-2xl transition-all duration-300 z-40">
+                    <!-- Feedback message -->
+                </div>
+            </div>
+
+            <!-- 3. FINAL EVALUATION SCREEN -->
+            <div id="screen-evaluation" class="hidden flex flex-col items-center text-center max-w-xl bg-sky-950/95 backdrop-blur-xl p-8 rounded-3xl border-4 border-amber-400/80 shadow-2xl pointer-events-auto">
+                <div class="text-6xl mb-2 animate-bounce">🏆</div>
+                <h2 class="font-title font-black text-3xl text-amber-300 mb-1">MISSION COMPLETE!</h2>
+                <p class="font-display text-base text-cyan-100 mb-6">You successfully caught all 6 sound fish!</p>
+
+                <div class="bg-slate-900/80 border-2 border-amber-500/40 rounded-2xl p-6 mb-6 w-full grid grid-cols-2 gap-4 text-center">
+                    <div class="bg-slate-800/80 p-4 rounded-xl border border-amber-500/20">
+                        <span class="text-xs text-amber-300 font-display block uppercase">Rounds</span>
+                        <span class="font-mono-num font-bold text-3xl text-white">6 / 6</span>
+                    </div>
+                    <div class="bg-slate-800/80 p-4 rounded-xl border border-amber-500/20">
+                        <span class="text-xs text-amber-300 font-display block uppercase">Final Score</span>
+                        <span id="eval-score" class="font-mono-num font-bold text-3xl text-amber-400">60</span>
+                    </div>
+                </div>
+
+                <div id="eval-message" class="bg-amber-950/80 border border-amber-400/40 rounded-xl p-4 mb-6 text-amber-200 font-display font-bold text-base">
+                    🌟 Excellent! Master Phonics Angler!
+                </div>
+
+                <button id="btn-restart" class="font-title font-black text-lg bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-300 text-amber-950 px-8 py-3.5 rounded-2xl shadow-xl transition-all transform hover:scale-105 cursor-pointer flex items-center space-x-2">
+                    <span>🔄 PLAY AGAIN</span>
+                </button>
+            </div>
+
+        </main>
+
+        <!-- Footer / Hand Status Indicator -->
+        <footer class="flex justify-between items-center pointer-events-auto max-w-6xl mx-auto w-full z-30">
+            <div id="hand-status-badge" class="flex items-center space-x-2 bg-slate-900/80 backdrop-blur-md px-4 py-2 rounded-xl border border-slate-700 shadow-md">
+                <div id="hand-indicator-dot" class="w-3 h-3 rounded-full bg-rose-500 transition-colors"></div>
+                <span id="hand-status-text" class="text-xs font-display font-bold text-slate-300">Searching Hand...</span>
+            </div>
+            <div class="bg-sky-950/70 backdrop-blur-md px-4 py-2 rounded-xl border border-cyan-500/30 text-xs font-display text-cyan-200">
+                🤏 Pinch thumb & index over moving fish to catch! (Or mouse move & click)
+            </div>
+        </footer>
+
+    </div>
+
+    <!-- Hand Cursor Element (Fishing Hook) -->
+    <div id="hand-cursor" class="absolute z-50 w-12 h-12 -ml-6 -mt-6 pointer-events-none transition-transform duration-75 flex items-center justify-center">
+        <div id="cursor-ring" class="absolute inset-0 rounded-full border-2 border-amber-400 bg-amber-400/20 animate-pulse"></div>
+        <span id="cursor-icon" class="text-2xl">🪝</span>
+    </div>
+
+    <!-- Hidden Video Canvas for MediaPipe Processing -->
+    <canvas id="output_canvas" class="hidden"></canvas>
+
+    <script>
+        // ==========================================
+        // CORRECTLY MAPPED AUDIO FILES FROM SOURCES
+        // v.ogg[cite: 3], p.ogg[cite: 4], b.ogg[cite: 5], t.ogg[cite: 6], d.ogg[cite: 7], f.ogg[cite: 8]
+        // ==========================================
+        const phonemeAudioFiles = {
+            'v': new Audio('v.ogg'),
+            'p': new Audio('p.ogg'),
+            'b': new Audio('b.ogg'),
+            't': new Audio('t.ogg'),
+            'd': new Audio('d.ogg'),
+            'f': new Audio('f.ogg')
+        };
+
+        function playPhonemeSound(key) {
+            const audio = phonemeAudioFiles[key];
+            if (audio) {
+                audio.currentTime = 0;
+                audio.play().catch(e => {
+                    console.log("Audio playback error:", e);
+                });
+            }
+        }
+
+        // Additional UI sound effects
+        let audioCtx = null;
+        function playSound(type) {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const now = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            if (type === 'click') {
+                osc.frequency.setValueAtTime(600, now);
+                osc.frequency.exponentialRampToValueAtTime(800, now + 0.08);
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+                osc.start(now); osc.stop(now + 0.08);
+            } else if (type === 'correct') {
+                [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
+                    const nOsc = audioCtx.createOscillator();
+                    const nGain = audioCtx.createGain();
+                    nOsc.connect(nGain); nGain.connect(audioCtx.destination);
+                    nOsc.frequency.setValueAtTime(freq, now + i * 0.08);
+                    nGain.gain.setValueAtTime(0.25, now + i * 0.08);
+                    nGain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.2);
+                    nOsc.start(now + i * 0.08); nOsc.stop(now + i * 0.08 + 0.2);
+                });
+            } else if (type === 'incorrect') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(150, now);
+                osc.frequency.linearRampToValueAtTime(100, now + 0.25);
+                gain.gain.setValueAtTime(0.3, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+                osc.start(now); osc.stop(now + 0.25);
+            } else if (type === 'pinch') {
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(400, now);
+                osc.frequency.exponentialRampToValueAtTime(700, now + 0.1);
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+                osc.start(now); osc.stop(now + 0.1);
+            }
+        }
+
+        // ==========================================
+        // 6 ROUNDS DATA (Strictly verified mapping)
+        // ==========================================
+        const roundsData = [
+            { phoneme: 'f', target: 'F', distractors: ['V', 'P', 'B'] },
+            { phoneme: 'v', target: 'V', distractors: ['F', 'T', 'D'] },
+            { phoneme: 'b', target: 'B', distractors: ['P', 'V', 'T'] },
+            { phoneme: 'p', target: 'P', distractors: ['B', 'F', 'D'] },
+            { phoneme: 't', target: 'T', distractors: ['D', 'F', 'P'] },
+            { phoneme: 'd', target: 'D', distractors: ['T', 'B', 'V'] }
+        ];
+
+        let currentRoundIndex = 0;
+        let score = 0;
+        let gameActive = false;
+        let swimmingFishObjects = [];
+        let animationFrameId = null;
+        let cursorX = window.innerWidth / 2;
+        let cursorY = window.innerHeight / 2;
+
+        const screenStart = document.getElementById('screen-start');
+        const screenGame = document.getElementById('screen-game');
+        const screenEvaluation = document.getElementById('screen-evaluation');
+        const btnStart = document.getElementById('btn-start');
+        const btnRestart = document.getElementById('btn-restart');
+        const btnHome = document.getElementById('btn-home');
+        const btnReplaySound = document.getElementById('btn-replay-sound');
+        const hudScore = document.getElementById('hud-score');
+        const swimmingPool = document.getElementById('swimming-pool');
+        const feedbackBanner = document.getElementById('feedback-banner');
+        const handCursor = document.getElementById('hand-cursor');
+        const cursorRing = document.getElementById('cursor-ring');
+        const cursorIcon = document.getElementById('cursor-icon');
+        const handIndicatorDot = document.getElementById('hand-indicator-dot');
+        const handStatusText = document.getElementById('hand-status-text');
+        const fishingRope = document.getElementById('fishing-rope');
+
+        function updateCursorPosition(x, y) {
+            cursorX = x;
+            cursorY = y;
+            handCursor.style.left = `${x}px`;
+            handCursor.style.top = `${y}px`;
+            // Update SVG line from boat tip (~100px, 70px) to hook position
+            fishingRope.setAttribute('x2', x);
+            fishingRope.setAttribute('y2', y);
+        }
+
+        // Mouse fallback tracking
+        window.addEventListener('mousemove', (e) => {
+            updateCursorPosition(e.clientX, e.clientY);
+        });
+
+        function shuffleArray(array) {
+            let arr = [...array];
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+            return arr;
+        }
+
+        function startGame() {
+            playSound('click');
+            currentRoundIndex = 0;
+            score = 0;
+            gameActive = true;
+            screenStart.classList.add('hidden');
+            screenEvaluation.classList.add('hidden');
+            screenGame.classList.remove('hidden');
+            loadRound();
+        }
+
+        function returnHome() {
+            playSound('click');
+            gameActive = false;
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            screenGame.classList.add('hidden');
+            screenEvaluation.classList.add('hidden');
+            screenStart.classList.remove('hidden');
+        }
+
+        function loadRound() {
+            feedbackBanner.classList.add('hidden');
+            const round = roundsData[currentRoundIndex];
+            hudScore.textContent = `Score: ${score}`;
+
+            setTimeout(() => {
+                playPhonemeSound(round.phoneme);
+            }, 400);
+
+            const letters = [round.target, ...shuffleArray(round.distractors).slice(0, 3)];
+            const randomizedLetters = shuffleArray(letters);
+
+            swimmingPool.innerHTML = '';
+            swimmingFishObjects = randomizedLetters.map((letter, idx) => {
+                const fishEl = document.createElement('div');
+                fishEl.id = `fish-${idx}`;
+                fishEl.className = `absolute cursor-pointer transition-transform duration-150 flex items-center justify-center filter drop-shadow-xl`;
+                
+                const colorTheme = getFishSVGColor(idx);
+                fishEl.innerHTML = `
+                    <svg class="w-36 h-24 filter drop-shadow-lg" viewBox="0 0 200 130" xmlns="http://www.w3.org/2000/svg">
+                        <polygon points="170,65 200,30 190,65 200,100" fill="${colorTheme.tail}" />
+                        <ellipse cx="100" cy="65" rx="75" ry="50" fill="url(#grad-${idx})" />
+                        <defs>
+                            <radialGradient id="grad-${idx}" cx="40%" cy="40%" r="60%">
+                                <stop offset="0%" stop-color="${colorTheme.light}" />
+                                <stop offset="100%" stop-color="${colorTheme.dark}" />
+                            </radialGradient>
+                        </defs>
+                        <path d="M 90,75 Q 70,110 110,85 Z" fill="${colorTheme.tail}" />
+                        <circle cx="55" cy="50" r="10" fill="white" />
+                        <circle cx="53" cy="50" r="4" fill="black" />
+                        <path d="M 25,65 Q 20,60 25,55" stroke="${colorTheme.dark}" stroke-width="4" fill="none" />
+                    </svg>
+                    <div class="absolute inset-0 flex items-center justify-center pl-4">
+                        <span class="font-title font-black text-4xl text-white bg-black/40 px-3 py-1 rounded-2xl border-2 border-white/60 shadow">${letter}</span>
+                    </div>
+                `;
+
+                swimmingPool.appendChild(fishEl);
+
+                const maxX = window.innerWidth - 180;
+                const maxY = window.innerHeight - 250;
+                const minX = 50;
+                const minY = 120;
+
+                return {
+                    id: idx,
+                    letter: letter,
+                    isTarget: letter === round.target,
+                    element: fishEl,
+                    x: minX + Math.random() * (maxX - minX),
+                    y: minY + Math.random() * (maxY - minY),
+                    vx: (Math.random() - 0.5) * 3.5,
+                    vy: (Math.random() - 0.5) * 3.0
+                };
+            });
+
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            animateFish();
+        }
+
+        function getFishSVGColor(idx) {
+            const themes = [
+                { light: '#fbbf24', dark: '#d97706', tail: '#f59e0b' },
+                { light: '#f43f5e', dark: '#be123c', tail: '#e11d48' },
+                { light: '#06b6d4', dark: '#0e7490', tail: '#0891b2' },
+                { light: '#10b981', dark: '#047857', tail: '#059669' }
+            ];
+            return themes[idx % themes.length];
+        }
+
+        function animateFish() {
+            if (!gameActive) return;
+
+            const maxX = window.innerWidth - 180;
+            const maxY = window.innerHeight - 220;
+            const minX = 40;
+            const minY = 120;
+
+            swimmingFishObjects.forEach(fish => {
+                fish.x += fish.vx;
+                fish.y += fish.vy;
+
+                if (fish.x <= minX || fish.x >= maxX) fish.vx *= -1;
+                if (fish.y <= minY || fish.y >= maxY) fish.vy *= -1;
+
+                fish.element.style.transform = `translate(${fish.x}px, ${fish.y}px)`;
+            });
+
+            animationFrameId = requestAnimationFrame(animateFish);
+        }
+
+        btnStart.addEventListener('click', startGame);
+        btnRestart.addEventListener('click', startGame);
+        btnHome.addEventListener('click', returnHome);
+        btnReplaySound.addEventListener('click', () => {
+            playSound('click');
+            const round = roundsData[currentRoundIndex];
+            playPhonemeSound(round.phoneme);
+        });
+
+        // Click handler for mouse catch fallback
+        window.addEventListener('click', (e) => {
+            if (!gameActive) return;
+            const fishCard = e.target.closest('[id^="fish-"]');
+            if (fishCard) {
+                const fishId = parseInt(fishCard.id.replace('fish-', ''));
+                const fish = swimmingFishObjects.find(f => f.id === fishId);
+                if (fish) handleFishCatch(fish);
+            }
+        });
+
+        function handleFishCatch(fish) {
+            if (!gameActive) return;
+            const round = roundsData[currentRoundIndex];
+
+            if (fish.isTarget) {
+                playSound('correct');
+                score += 10;
+                hudScore.textContent = `Score: ${score}`;
+
+                fish.element.classList.add('scale-150');
+
+                feedbackBanner.className = "absolute bottom-12 left-1/2 transform -translate-x-1/2 px-8 py-3 rounded-2xl font-title font-black text-2xl shadow-2xl bg-emerald-500 text-slate-950 border-4 border-emerald-300 animate-bounce z-40";
+                feedbackBanner.innerHTML = `🎉 CORRECT! <span class="text-white ml-2">Matched ${round.target}</span>`;
+                feedbackBanner.classList.remove('hidden');
+
+                gameActive = false;
+                if (animationFrameId) cancelAnimationFrame(animationFrameId);
+
+                setTimeout(() => {
+                    currentRoundIndex++;
+                    if (currentRoundIndex < roundsData.length) {
+                        gameActive = true;
+                        loadRound();
+                    } else {
+                        showEvaluationScreen();
+                    }
+                }, 1800);
+
+            } else {
+                playSound('incorrect');
+
+                fish.element.classList.add('animate-pulse', 'ring-8', 'ring-rose-500');
+                setTimeout(() => {
+                    fish.element.classList.remove('animate-pulse', 'ring-8', 'ring-rose-500');
+                }, 500);
+
+                feedbackBanner.className = "absolute bottom-12 left-1/2 transform -translate-x-1/2 px-8 py-3 rounded-2xl font-title font-black text-2xl shadow-2xl bg-rose-500 text-white border-4 border-rose-300 z-40";
+                feedbackBanner.innerHTML = `❌ TRY AGAIN! Listen to the sound again.`;
+                feedbackBanner.classList.remove('hidden');
+
+                setTimeout(() => {
+                    playPhonemeSound(round.phoneme);
+                }, 600);
+            }
+        }
+
+        function showEvaluationScreen() {
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            screenGame.classList.add('hidden');
+            screenEvaluation.classList.remove('hidden');
+            document.getElementById('eval-score').textContent = score;
+        }
+
+        // ==========================================
+        // MEDIAPIPE HAND TRACKING & PINCH DETECTION
+        // ==========================================
+        const videoElement = document.getElementById('webcam-video');
+        let isPinching = false;
+        let pinchCooldown = false;
+
+        function onResults(results) {
+            if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+                handIndicatorDot.className = "w-3 h-3 rounded-full bg-rose-500";
+                handStatusText.textContent = "Searching Hand...";
+                handCursor.style.opacity = "0.3";
+                return;
+            }
+
+            handIndicatorDot.className = "w-3 h-3 rounded-full bg-emerald-400 animate-ping";
+            handStatusText.textContent = "Hand Detected";
+            handCursor.style.opacity = "1";
+
+            const landmarks = results.multiHandLandmarks[0];
+            const indexTip = landmarks[8];
+            const thumbTip = landmarks[4];
+
+            const screenX = (1 - indexTip.x) * window.innerWidth;
+            const screenY = indexTip.y * window.innerHeight;
+
+            updateCursorPosition(screenX, screenY);
+
+            const dx = indexTip.x - thumbTip.x;
+            const dy = indexTip.y - thumbTip.y;
+            const dz = indexTip.z - thumbTip.z;
+            const pinchDistance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            const PINCH_THRESHOLD = 0.06;
+
+            if (pinchDistance < PINCH_THRESHOLD) {
+                if (!isPinching && !pinchCooldown) {
+                    isPinching = true;
+                    playSound('pinch');
+                    cursorRing.className = "absolute inset-0 rounded-full border-4 border-yellow-400 bg-yellow-400/50 scale-125 transition-transform";
+                    cursorIcon.textContent = "✨";
+
+                    checkFishCollision(screenX, screenY);
+
+                    pinchCooldown = true;
+                    setTimeout(() => { pinchCooldown = false; }, 800);
+                }
+            } else {
+                isPinching = false;
+                cursorRing.className = "absolute inset-0 rounded-full border-2 border-amber-400 bg-amber-400/20 animate-pulse";
+                cursorIcon.textContent = "🪝";
+            }
+        }
+
+        function checkFishCollision(x, y) {
+            if (!gameActive) return;
+            swimmingFishObjects.forEach(fish => {
+                const el = fish.element;
+                if (el) {
+                    const rect = el.getBoundingClientRect();
+                    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+                        handleFishCatch(fish);
+                    }
+                }
+            });
+        }
+
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.6
+        });
+
+        hands.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({ image: videoElement });
+            },
+            width: 1280,
+            height: 720
+        });
+
+        camera.start().catch(err => {
+            console.error("Webcam warning:", err);
+            handStatusText.textContent = "Webcam Inactive (Mouse Enabled)";
+        });
+    </script>
+</body>
+</html>
